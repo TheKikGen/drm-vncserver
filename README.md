@@ -2,30 +2,20 @@
 
 VNC server for Linux DRM framebuffer devices.
 
-The goal is to access remote embedded Linux systems without X.
-Implemented features: remote display, touchscreen, keyboard, rotation
-Not implemented: file transfer, ..
+This project allows remote access to embedded Linux systems with a direct frame buffer rendering, notably Akai MPC devices.
 
-This project is notably used to access remotely to Akai MPC devices.
-
-Working configurations:
-
-with rotation:
-- [ ]  32 bit/pixel
-
+Working configurations: 32 bits/pixel with 90, 180, 270 degress rotation. 
 Other resolutions are not implemented.
 
 The code is based on a LibVNC example for Android:
-https://github.com/LibVNC/libvncserver/blob/master/examples/androidvncserver.c
-and was forked from the following project https://github.com/ponty/framebuffer-vncserver
-
+https://github.com/LibVNC/libvncserver/blob/master/examples/androidvncserver.c 
+and was forked from the following project https://github.com/ponty/framebuffer-vncserver 
 
 ### build
 
 Dependency:
 
-apt-get install libvncserver-dev
-apt-get install libdrm-dev
+apt-get install libvncserver-dev libdrm-dev
 
 Use the "make" command to build the binary in the bin/ directory.
 
