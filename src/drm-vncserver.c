@@ -73,19 +73,11 @@ static char mouse_device[256] = "";
 static struct fb_var_screeninfo var_scrinfo;
 static struct fb_fix_screeninfo fix_scrinfo;
 
-
-static unsigned short int *Framebuffer_mmap = MAP_FAILED;
 static unsigned short int *RFB_Framebuffer;
 static unsigned short int *FrameBuffer;
 
 static int drmfd = -1;
 static char drmFB_device[256] = "/dev/dri/card0";
-static drmModeRes *drmRes;
-static drmModeCrtc *drmCrtc;    
-static drmModeConnector *drmConnector = NULL;
-static drmModeEncoder * drmEncoder = NULL;
-static drmModeFB *drmFB;
-static drmModeModeInfoPtr drmResolution = 0;
 static unsigned short int *drmFramebuffer_mmap = MAP_FAILED;
 
 static int VNC_port = 5900;
@@ -196,6 +188,12 @@ static void tklog(int level, const char *fmt, ...) {
 ///////////////////////////////////////////////////////////////////////////////
 static void init_drmFB(void)
 {
+    drmModeFB           *drmFB;
+    drmModeRes          *drmRes;
+    drmModeCrtc         *drmCrtc;    
+    drmModeConnector    *drmConnector = NULL;
+    drmModeEncoder      *drmEncoder = NULL;
+    drmModeModeInfoPtr  drmResolution = 0;
 
     // Open the DRM device
     drmfd = open(drmFB_device, O_RDWR | O_CLOEXEC);
@@ -292,7 +290,11 @@ static void init_drmFB(void)
         exit(EXIT_FAILURE);
     }
     tklog_info("DRM frame buffer map of %u bytes allocated at %p.\n",FrameBufferSize,drmFramebuffer_mmap);
+
     drmModeFreeEncoder(drmEncoder);
+    drmModeFreeCrtc(drmCrtc);
+    drmModeFreeConnector(drmConnector);
+    drmModeFreeResources(drmRes);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -300,11 +302,7 @@ static void init_drmFB(void)
 ///////////////////////////////////////////////////////////////////////////////
 static void cleanup_drmFB(void)
 {
-    drmModeFreeCrtc(drmCrtc);
-    drmModeFreeConnector(drmConnector);
-    drmModeFreeResources(drmRes);
     close(drmfd);
-    drmfd = -1 ;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -521,9 +519,9 @@ static void update_screen(void)
 
     if (FrameBuffer_BitsPerPixel == 32)
     {
-        uint32_t *f = (uint16_t *)drmFramebuffer_mmap;  // -> framebuffer
-        uint32_t *c = (uint16_t *)FrameBuffer;       // -> compare framebuffer
-        uint32_t *r = (uint16_t *)RFB_Framebuffer;   // -> remote framebuffer
+        uint32_t *f = (uint32_t *)drmFramebuffer_mmap;  // -> framebuffer
+        uint32_t *c = (uint32_t *)FrameBuffer;          // -> compare framebuffer
+        uint32_t *r = (uint32_t *)RFB_Framebuffer;      // -> remote framebuffer
 
         switch (VNC_rotate) {
             case 0:
@@ -717,7 +715,6 @@ int main(int argc, char **argv)
         }
     }
 
-
   	tklog_info("VNCSERVER STARTING...\n");
 
     init_fb();
@@ -749,7 +746,7 @@ int main(int argc, char **argv)
         enable_touch = (ret > 0);
     }
     else if(strlen(mouse_device) > 0) {
-        // init touch only if there is a mouse device defined
+        // init mouse only if there is a mouse device defined
         int ret = init_mouse(mouse_device, Touch_rotate);
         enable_mouse = (ret > 0);        
     }
@@ -785,7 +782,6 @@ int main(int argc, char **argv)
     }
 
     tklog_info("Cleaning up things...\n");
-    cleanup_fb();
     cleanup_drmFB();
     cleanup_kbd();
     cleanup_touch();
