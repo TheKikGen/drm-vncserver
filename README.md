@@ -74,3 +74,4 @@ Use the "make" command to build the binary in the bin/ directory.
 	[tkgl INFO    ]  Initializing VNC server...
 	13/12/2023 23:57:11 Listening for VNC connections on TCP port 5900
 	13/12/2023 23:57:11 Listening for VNC connections on TCP6 port 5900
+![image](https://github.com/TheKikGen/drm-vncserver/assets/35703467/cad3d4ef-2e15-4fab-8c09-799369f2db85)
