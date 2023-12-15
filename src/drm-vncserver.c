@@ -53,11 +53,15 @@ __ __| |           |  /_) |     ___|             |           |\n\
  _|  _| |_|\\___| _|\\_\\_|_|\\_\\\\____|\\___|_|  _| _____|\\__,_|_.__/ ____/\n\
 "
 
-/*****************************************************************************/
+
 #define LOG_FPS
 
-#define BITS_PER_SAMPLE 5
-#define SAMPLES_PER_PIXEL 2
+#define BITS_PER_SAMPLE 8
+#define SAMPLES_PER_PIXEL 4
+//#define COLOR_MASK  0x1f001f
+#define COLOR_MASK (((1UL << BITS_PER_SAMPLE) << 1) - 1)
+#define PIXEL_FB_TO_RFB(p, r_offset, g_offset, b_offset) \
+    ((p >> r_offset) & COLOR_MASK) | (((p >> g_offset) & COLOR_MASK) << BITS_PER_SAMPLE) | (((p >> b_offset) & COLOR_MASK) << (2 * BITS_PER_SAMPLE))
 
 #ifndef ALIGN_UP
 #define ALIGN_UP(x,y)  ((x + (y)-1) & ~((y)-1))
@@ -87,6 +91,7 @@ static int Target_fps = 10;
 static rfbScreenInfoPtr RFB_Server;
 static size_t FrameBuffer_BytesPP;
 static unsigned int FrameBuffer_BitsPerPixel;
+static unsigned int FrameBuffer_Depth;
 static unsigned int FrameBufferSize;
 static unsigned int FrameBuffer_Xwidth;
 static unsigned int FrameBuffer_Yheight;
@@ -152,7 +157,7 @@ const char *connector_type_name(unsigned int type)
 enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 
 #define tklog_trace(...) tklog(LOG_TRACE,  __VA_ARGS__)
-#define tklog_debug(...) tklog(LOG_DEBUG,  __VA_ARGS__)
+#define tklog_debug(...) // tklog(LOG_DEBUG,  __VA_ARGS__)
 #define tklog_info(...)  tklog(LOG_INFO,   __VA_ARGS__)
 #define tklog_warn(...)  tklog(LOG_WARN,   __VA_ARGS__)
 #define tklog_error(...) tklog(LOG_ERROR,  __VA_ARGS__)
@@ -283,6 +288,8 @@ static void init_drmFB(void)
     FrameBufferSize          = drmFB->pitch * drmFB->height;
     FrameBuffer_BitsPerPixel = drmFB->bpp;
     FrameBuffer_BytesPP      = FrameBuffer_BitsPerPixel / 8;
+    FrameBuffer_Depth        = drmFB->depth;
+
 
     drmFramebuffer_mmap = mmap(0, FrameBufferSize, PROT_READ | PROT_WRITE, MAP_SHARED, drmfd, dumb_map.offset);
     if (drmFramebuffer_mmap == MAP_FAILED) {
@@ -431,21 +438,17 @@ static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool 
 {
     tklog_info("Initializing VNC server...\n");
 
-    int rbytespp = FrameBuffer_BitsPerPixel == 1 ? 1 : FrameBuffer_BytesPP;
-    int rFrameBufferSize = FrameBuffer_BitsPerPixel == 1 ? FrameBufferSize * 8 : FrameBufferSize;
-    
     // Allocate the VNC server buffer to be managed (not manipulated) by libvncserver.
-    RFB_Framebuffer = malloc(rFrameBufferSize);
+    RFB_Framebuffer = malloc(FrameBufferSize);
     assert(RFB_Framebuffer != NULL);
-    memset(RFB_Framebuffer, FrameBuffer_BitsPerPixel == 1 ? 0xFF : 0x00, rFrameBufferSize);
+    memset(RFB_Framebuffer, 0, FrameBufferSize);
 
     // Allocate the comparison buffer for detecting drawing updates from frame to frame.
-    FrameBuffer = calloc(FrameBufferSize, 1);
+    FrameBuffer = malloc(FrameBufferSize);
     assert(FrameBuffer != NULL);
 
-    /* TODO: This assumes var_scrinfo.bits_per_pixel is 16. */
-    RFB_Server = rfbGetScreen(&argc, argv, FrameBuffer_Xwidth, FrameBuffer_Yheight, BITS_PER_SAMPLE, SAMPLES_PER_PIXEL, rbytespp);
-    //server = rfbGetScreen(&argc, argv, padded_width, FrameBuffer_Yheight, BITS_PER_SAMPLE, SAMPLES_PER_PIXEL, rbytespp);
+    RFB_Server = rfbGetScreen(&argc, argv, FrameBuffer_Xwidth, FrameBuffer_Yheight, BITS_PER_SAMPLE, SAMPLES_PER_PIXEL, FrameBuffer_BytesPP);
+    
     assert(RFB_Server != NULL);
 
     RFB_Server->desktopName  = SERVER_NAME;
@@ -456,7 +459,42 @@ static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool 
 
     RFB_Server->kbdAddEvent = keyevent;
     if (enable_touch) RFB_Server->ptrAddEvent = ptrevent_touch;
-    if (enable_mouse) RFB_Server->ptrAddEvent = ptrevent_mouse;
+    if (enable_mouse) RFB_Server->ptrAddEvent = ptrevent_mouse; 
+    
+    // Set PixelFormat for server
+    RFB_Server->serverFormat.bitsPerPixel = FrameBuffer_BitsPerPixel ;
+    RFB_Server->serverFormat.depth        = FrameBuffer_Depth ;
+    RFB_Server->serverFormat.bigEndian    = 0 ;
+    RFB_Server->serverFormat.trueColour   = 1 ;
+    RFB_Server->serverFormat.redMax       = 0x00FF ;
+    RFB_Server->serverFormat.greenMax     = 0x00FF ;
+    RFB_Server->serverFormat.blueMax      = 0x00FF ; 
+    RFB_Server->serverFormat.blueMax      = 0x00FF ;
+ 
+    RFB_Server->serverFormat.redShift     = var_scrinfo.red.offset ;
+    RFB_Server->serverFormat.greenShift   = var_scrinfo.green.offset ;
+    RFB_Server->serverFormat.blueShift    = var_scrinfo.blue.offset ;  
+    
+    // Rotation adjustments
+    switch (VNC_rotate) {
+        case 0:
+        case 180:
+            RFB_Server->width = FrameBuffer_Xwidth;
+            RFB_Server->height = FrameBuffer_Yheight;
+            RFB_Server->paddedWidthInBytes = FrameBuffer_Xwidth * FrameBuffer_BytesPP;
+            break;
+
+        case 90:
+        case 270:
+            RFB_Server->width = FrameBuffer_Yheight;
+            RFB_Server->height = FrameBuffer_Xwidth;
+            RFB_Server->paddedWidthInBytes = FrameBuffer_Yheight * FrameBuffer_BytesPP;
+            break;
+
+        default:
+            tklog_fatal("%d is an invalid rotation value. 0, 90, 180, 270 are correct values\n",VNC_rotate);
+            exit(EXIT_FAILURE);
+    }
     
     rfbInitServer(RFB_Server);
 
@@ -487,18 +525,12 @@ int timeToLogFPS()
     return elapsed > LOG_TIME;
 }
 
-/*****************************************************************************/
-//#define COLOR_MASK  0x1f001f
-#define COLOR_MASK (((1 << BITS_PER_SAMPLE) << 1) - 1)
-#define PIXEL_FB_TO_RFB(p, r_offset, g_offset, b_offset) \
-    ((p >> r_offset) & COLOR_MASK) | (((p >> g_offset) & COLOR_MASK) << BITS_PER_SAMPLE) | (((p >> b_offset) & COLOR_MASK) << (2 * BITS_PER_SAMPLE))
-
 
 ///////////////////////////////////////////////////////////////////////////////
-// VNC UPDATE SCREEN 
+// VNC UPDATE SCREEN - 32 bits per pixel
 ///////////////////////////////////////////////////////////////////////////////
 
-static void update_screen(void)
+static void update_screen32(void)
 {
 #ifdef LOG_FPS
     if (verbose)
@@ -517,100 +549,84 @@ static void update_screen(void)
     varblock.min_i = varblock.min_j = 9999;
     varblock.max_i = varblock.max_j = -1;
 
-    if (FrameBuffer_BitsPerPixel == 32)
+    uint32_t *f = (uint32_t *)drmFramebuffer_mmap;  // -> framebuffer
+    uint32_t *c = (uint32_t *)FrameBuffer;          // -> compare framebuffer
+    uint32_t *r = (uint32_t *)RFB_Framebuffer;      // -> remote framebuffer
+ 
+
+    // Something changed in the Framebuffer ?    
+    if ( memcmp(drmFramebuffer_mmap, FrameBuffer, FrameBufferSize) != 0)
     {
-        uint32_t *f = (uint32_t *)drmFramebuffer_mmap;  // -> framebuffer
-        uint32_t *c = (uint32_t *)FrameBuffer;          // -> compare framebuffer
-        uint32_t *r = (uint32_t *)RFB_Framebuffer;      // -> remote framebuffer
 
-        switch (VNC_rotate) {
-            case 0:
-            case 180:
-                RFB_Server->width = FrameBuffer_Xwidth;
-                RFB_Server->height = FrameBuffer_Yheight;
-                RFB_Server->paddedWidthInBytes = FrameBuffer_Xwidth * FrameBuffer_BytesPP;
-                break;
+        // memcpy(FrameBuffer,drmFramebuffer_mmap,FrameBufferSize);
+        // memcpy(RFB_Framebuffer,drmFramebuffer_mmap,FrameBufferSize);
+        // rfbMarkRectAsModified(RFB_Server, 0, 0, FrameBuffer_Xwidth, FrameBuffer_Yheight);
+        // return;
 
-            case 90:
-            case 270:
-                RFB_Server->width = FrameBuffer_Yheight;
-                RFB_Server->height = FrameBuffer_Xwidth;
-                RFB_Server->paddedWidthInBytes = FrameBuffer_Yheight * FrameBuffer_BytesPP;
-                break;
-        }
-
-        // Something changed in the Framebuffer ?    
-        if ( memcmp(drmFramebuffer_mmap, FrameBuffer, FrameBufferSize) != 0)
+        uint16_t y;
+        for (y = 0; y < FrameBuffer_Yheight; y++)
         {
-            int y;
-            for (y = 0; y < (int)FrameBuffer_Yheight; y++)
+            /* Compare every pixels at a time */
+            uint16_t x;
+            for (x = 0; x < FrameBuffer_Xwidth; x++)
             {
-                /* Compare every pixels at a time */
-                int x;
-                for (x = 0; x < (int)FrameBuffer_Xwidth; x++)
+                if ( *f != *c)
                 {
-                    uint32_t pixel = *f;
+                    uint16_t x2, y2;
 
-                    if (pixel != *c)
+                    *c = *f; // Update compare FB
+
+                    switch (VNC_rotate)
                     {
-                        int x2, y2;
+                    case 0:
+                        x2 = x;
+                        y2 = y;
+                        break;
 
-                        *c = pixel;
-                        switch (VNC_rotate)
-                        {
-                        case 0:
-                            x2 = x;
-                            y2 = y;
-                            break;
+                    case 90:
+                        x2 = FrameBuffer_Yheight - 1 - y;
+                        y2 = x;
+                        break;
 
-                        case 90:
-                            x2 = FrameBuffer_Yheight - 1 - y;
-                            y2 = x;
-                            break;
+                    case 180:
+                        x2 = FrameBuffer_Xwidth - 1 - x;
+                        y2 = FrameBuffer_Yheight - 1 - y;
+                        break;
 
-                        case 180:
-                            x2 = FrameBuffer_Xwidth - 1 - x;
-                            y2 = FrameBuffer_Yheight - 1 - y;
-                            break;
-
-                        case 270:
-                            x2 = y;
-                            y2 = FrameBuffer_Xwidth - 1 - x;
-                            break;
-                        default:
-                            tklog_fatal("%d rotation is invalid. 0, 90, 180, 270 are correct values\n");
-                            exit(EXIT_FAILURE);
-                        }
-
-                        r[y2 * RFB_Server->width + x2] = PIXEL_FB_TO_RFB(pixel, varblock.r_offset, varblock.g_offset, varblock.b_offset);
-
-                        if (x2 < varblock.min_i)
-                            varblock.min_i = x2;
-                        else
-                        {
-                            if (x2 > varblock.max_i)
-                                varblock.max_i = x2;
-
-                            if (y2 > varblock.max_j)
-                                varblock.max_j = y2;
-                            else if (y2 < varblock.min_j)
-                                varblock.min_j = y2;
-                        }
+                    case 270:
+                        x2 = y;
+                        y2 = FrameBuffer_Xwidth - 1 - x;
+                        break;
+                    default:
+                        tklog_fatal("%d rotation is invalid. 0, 90, 180, 270 are correct values\n");
+                        exit(EXIT_FAILURE);
                     }
 
-                    f++;
-                    c++;
+                    // Update remote FB
+                    r[y2 * RFB_Server->width + x2] = *f ;
+                    //PIXEL_FB_TO_RFB(*f, varblock.r_offset, varblock.g_offset, varblock.b_offset);
+
+                    if (x2 < varblock.min_i)
+                        varblock.min_i = x2;
+                    else
+                    {
+                        if (x2 > varblock.max_i)
+                            varblock.max_i = x2;
+
+                        if (y2 > varblock.max_j)
+                            varblock.max_j = y2;
+                        else if (y2 < varblock.min_j)
+                            varblock.min_j = y2;
+                    }
                 }
+
+                f++;
+                c++;
             }
         }
-    }
- 
-    else
-    {
-        tklog_fatal("No supported color depth or rotation for this device.\n");
-        exit(EXIT_FAILURE);
-    }
 
+    } 
+ 
     if (varblock.min_i < 9999)
     {
         if (varblock.max_i < 0)
@@ -640,7 +656,7 @@ void print_usage(char **argv)
                "-m device: mouse device node (example:/dev/input/event2)\n"
                "-r degrees: framebuffer rotation, default is 0\n"
                "-R degrees: touchscreen rotation, default is same as framebuffer rotation\n"
-               "-F FPS: Maximum target FPS, default is 10\n"
+               "-F FPS: Maximum target FPS, default is 10.  0 means unlimited FPS.\n"
                "-v: verbose\n"
                "-h: print this help\n\n",
                *argv,drmFB_device);
@@ -720,6 +736,12 @@ int main(int argc, char **argv)
     init_fb();
     init_drmFB();
 
+    if (FrameBuffer_BitsPerPixel != 32) {
+        tklog_fatal("Only 32 bits framebuffer is supported. Current Bits Per Pixel is %d.\n",FrameBuffer_BitsPerPixel);
+        exit(EXIT_FAILURE);
+    }
+
+   
     if ( FrameBuffer_Xwidth < FrameBuffer_Yheight  && VNC_rotate < 0 ) {
         tklog_info("Display auto rotation activated (90°)\n");
         VNC_rotate = 90;
@@ -768,19 +790,18 @@ int main(int argc, char **argv)
     /* Implement our own event loop to detect changes in the framebuffer. */
     while (1)
     {
-        rfbRunEventLoop(RFB_Server, 100 * 1000, TRUE);
+        rfbRunEventLoop(RFB_Server, 40 * 1000, TRUE);
         while (rfbIsActive(RFB_Server))
         {
             if (RFB_Server->clientHead != NULL)
-                update_screen();
-
-            if (Target_fps > 0)
-                usleep(1000 * 1000 / Target_fps);
-            else if (RFB_Server->clientHead == NULL)
-                usleep(100 * 1000);
+                update_screen32();
+            else {
+                if (Target_fps > 0) usleep(1000 * 1000 / Target_fps);
+                else usleep(10 * 1000);     
+            }    
         }
     }
-
+ 
     tklog_info("Cleaning up things...\n");
     cleanup_drmFB();
     cleanup_kbd();
