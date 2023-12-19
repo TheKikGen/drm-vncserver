@@ -20,8 +20,8 @@
 #include "rfb/rfb.h"
 #include "rfb/keysym.h"
 
+#include "tklog.h"
 #include "keyboard.h"
-#include "logging.h"
 
 #ifndef input_event_sec
 #define input_event_sec time.tv_sec
@@ -33,10 +33,10 @@ static int kbdfd = -1;
 
 int init_kbd(const char *kbd_device)
 {
-    info_print("Initializing keyboard device %s ...\n", kbd_device);
+    tklog_info("Initializing keyboard device %s ...\n", kbd_device);
     if ((kbdfd = open(kbd_device, O_RDWR)) == -1)
     {
-        error_print("cannot open kbd device %s\n", kbd_device);
+        tklog_error("cannot open kbd device %s\n", kbd_device);
         return 0;
     }
     else
@@ -68,7 +68,7 @@ void injectKeyEvent(uint16_t code, uint16_t value)
     ev.value = value;
     if (write(kbdfd, &ev, sizeof(ev)) < 0)
     {
-        error_print("write event failed, %s\n", strerror(errno));
+        tklog_error("write event failed, %s\n", strerror(errno));
     }
 
     // Finally send the SYN
@@ -81,10 +81,10 @@ void injectKeyEvent(uint16_t code, uint16_t value)
     ev.value = 0;
     if (write(kbdfd, &ev, sizeof(ev)) < 0)
     {
-        error_print("write event failed, %s\n", strerror(errno));
+        tklog_error("write event failed, %s\n", strerror(errno));
     }
 
-    debug_print("injectKey (%d, %d)\n", code, value);
+    tklog_debug("injectKey (%d, %d)\n", code, value);
 }
 
 int keysym2scancode(rfbKeySym key, rfbClientPtr cl)

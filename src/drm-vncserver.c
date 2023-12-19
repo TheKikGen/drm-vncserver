@@ -44,6 +44,8 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
+#include "tklog.h"
+
 #define SERVER_NAME "The Kikgen Labs - MPC VNC Server"
 #define TKGL_LOGO "\
 __ __| |           |  /_) |     ___|             |           |\n\
@@ -110,6 +112,8 @@ struct type_name {
     const char *name;
 };
 
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+
 static const struct type_name connector_type_names[] = {
     { DRM_MODE_CONNECTOR_Unknown, "unknown" },
     { DRM_MODE_CONNECTOR_VGA, "VGA" },
@@ -131,7 +135,8 @@ static const struct type_name connector_type_names[] = {
     { DRM_MODE_CONNECTOR_DPI, "DPI" },
 };
 
-#define ARRAY_SIZE(array) (sizeof(array) / sizeof(array[0]))
+// Prototypes
+static void update_screen32();
 
 const char *connector_type_name(unsigned int type)
 {
@@ -140,43 +145,6 @@ const char *connector_type_name(unsigned int type)
     }
 
     return "INVALID";
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// Log management
-///////////////////////////////////////////////////////////////////////////////
-enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
-
-#define tklog_trace(...) tklog(LOG_TRACE,  __VA_ARGS__)
-#define tklog_debug(...) tklog(LOG_DEBUG,  __VA_ARGS__)
-#define tklog_info(...)  tklog(LOG_INFO,   __VA_ARGS__)
-#define tklog_warn(...)  tklog(LOG_WARN,   __VA_ARGS__)
-#define tklog_error(...) tklog(LOG_ERROR,  __VA_ARGS__)
-#define tklog_fatal(...) tklog(LOG_FATAL,  __VA_ARGS__)
-
-static const char *tklog_level_strings[] = {
-  "TRACE", "DEBUG", "INFO", "WARN", "***ERROR", "***FATAL"
-};
-
-static void tklog(int level, const char *fmt, ...) {
-
-  va_list ap;
-
-  //time_t timestamp = time( NULL );
-  //struct tm * now = localtime( & timestamp );
-
-  //char buftime[16];
-  //buftime[strftime(buftime, sizeof(buftime), "%H:%M:%S", now)] = '\0';
-
-  if ( level >= LOG_ERROR ) fprintf(stderr, "[tkgl %-8s]  ",tklog_level_strings[level]);
-  else  fprintf(stdout, "[tkgl %-8s]  ",tklog_level_strings[level]);
- 
-  va_start(ap, fmt);
-  vfprintf(stdout, fmt, ap);
-  va_end(ap);
-
-  fflush(stdout);
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -420,8 +388,10 @@ by a press and release of button 4, and each step downwards is represented by
 a press and release of button 5.
   From: http://www.vislab.usyd.edu.au/blogs/index.php/2009/05/22/an-headerless-indexed-protocol-for-input-1?blog=61 */
 
-   // tklog_debug("Got ptrevent touch: %04x (x=%d, y=%d)\n", buttonMask, x, y);
+    //tklog_debug("Got ptrevent touch: %04x (x=%d, y=%d)\n", buttonMask, x, y);
     // Simulate left mouse event as touch event
+
+    
     static int pressed = 0;
     if (buttonMask & 1)
     {
@@ -480,7 +450,6 @@ static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool 
     memset(CMP_FrameBuffer, 0, FrameBufferSize);
     
     RFB_Server = rfbGetScreen(&argc, argv, FrameBuffer_Xwidth, FrameBuffer_Yheight, BITS_PER_SAMPLE, SAMPLES_PER_PIXEL, FrameBuffer_BytesPP);
-    
     assert(RFB_Server != NULL);
 
     RFB_Server->desktopName  = SERVER_NAME;
@@ -516,13 +485,6 @@ static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool 
             memcpy(RFB_FrameBuffer, DRM_FrameBuffer,FrameBufferSize);
             break;
 
-        case 180:
-            RFB_Server->width = FrameBuffer_Xwidth;
-            RFB_Server->height = FrameBuffer_Yheight;
-            RFB_Server->paddedWidthInBytes = FrameBuffer_Xwidth * FrameBuffer_BytesPP;
-            rotateMatrix180(RFB_FrameBuffer, DRM_FrameBuffer, FrameBuffer_Xwidth, FrameBuffer_Yheight);
-            break;
-
         case 90:
             RFB_Server->width = FrameBuffer_Yheight;
             RFB_Server->height = FrameBuffer_Xwidth;
@@ -530,15 +492,8 @@ static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool 
             rotateMatrix90(RFB_FrameBuffer, DRM_FrameBuffer, FrameBuffer_Xwidth, FrameBuffer_Yheight);
             break;
 
-        case 270:
-            RFB_Server->width = FrameBuffer_Yheight;
-            RFB_Server->height = FrameBuffer_Xwidth;
-            RFB_Server->paddedWidthInBytes = RFB_Server->width * FrameBuffer_BytesPP;
-            rotateMatrix270(RFB_FrameBuffer, DRM_FrameBuffer, FrameBuffer_Xwidth, FrameBuffer_Yheight);
-            break;
-
         default:
-            tklog_fatal("%d is an invalid rotation value. 0, 90, 180, 270 are correct values\n",VNC_rotate);
+            tklog_fatal("%d is an invalid rotation value. 0, 90 are correct values\n",VNC_rotate);
             exit(EXIT_FAILURE);
     }
     
@@ -565,30 +520,6 @@ int timeToLogFPS()
     return elapsed > LOG_TIME;
 }
 
-
-uint32_t * memdiff32(uint32_t *buff1, uint32_t * buff2, size_t buffsize) {
-    
-    uint32_t *buffend = buff1 + ( buffsize / sizeof(buff1 ) - 1) ;
-    while ( *buff1 == *buff2 ) {
-        if ( buff1 == buffend ) return (uint32_t *) NULL ; 
-        buff1++ ; buff2++;
-    }
-    return buff1 ;
-}
-
-uint32_t * memRdiff32(uint32_t *buff1, uint32_t * buff2, size_t buffsize) {
-    
-    uint32_t *buffend1 = buff1 + ( buffsize / sizeof(buff1 ) - 1) ;
-    uint32_t *buffend2 = buff2 + ( buffsize / sizeof(buff2 ) - 1) ;
-    
-    while ( *buffend1 == *buffend2 ) {
-        if ( buffend1 == buff1 ) return (uint32_t *) NULL ; 
-        buffend1-- ; buffend2--;
-    }
-    return buffend1 ;
-}
-
-
 static void update_rec(uint16_t x,uint16_t y) {
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
@@ -613,7 +544,8 @@ static void update_screen32()
  
     uint16_t x2, y2;
     uint32_t destOffset ;    
- 
+    uint8_t Changed = 0;
+
     if ( VNC_rotate == 90 ) {
         for ( uint16_t y = 0 ; y < FrameBuffer_Yheight; y++) {
             destOffset = 0;    
@@ -624,63 +556,30 @@ static void update_screen32()
                     y2 = x;
                     r[destOffset + x2] = *f ;
                     update_rec(x2,y2);
+                    Changed = 1;
                 }
                 destOffset += RFB_Server->width ;
                 f++;  c++;
             }   
         }
     }
-    else
-    if ( VNC_rotate == 270 ) {
-        for ( uint16_t y = 0 ; y < FrameBuffer_Yheight; y++) {
-            destOffset = 0;    
-            for ( uint16_t x = 0 ; x < FrameBuffer_Xwidth; x++) {
-                if ( *f != *c) {      
-                    *c = *f; 
-                    x2 = y;
-                    y2 = FrameBuffer_Xwidth - 1 - x;
-                    r[destOffset + x2] = *f ;
-//                    r[y2 * RFB_Server->width + x2] = *f ;
-                    update_rec(x2,y2);
-                }
-                destOffset += RFB_Server->width ;
-                f++;  c++;
-            }   
-        }
-    }
-    else
-    if ( VNC_rotate == 180 ) {
-        for ( uint16_t y = 0 ; y < FrameBuffer_Yheight; y++) {
-            destOffset = 0;    
-            for ( uint16_t x = 0 ; x < FrameBuffer_Xwidth; x++) {
-                if ( *f != *c) {      
-                    *c = *f; 
-                    y2 = FrameBuffer_Yheight - 1 - y;
-                    x2 = FrameBuffer_Xwidth - 1 - x;
-                    r[destOffset + x2] = *f ;
-//                    r[y2 * RFB_Server->width + x2] = *f ;
-                    update_rec(x2,y2);
-                }
-                destOffset += RFB_Server->width ;
-                f++;  c++;
-            }   
-        }
-    }
-
+ 
     else {
         for ( uint16_t y = 0 ; y < FrameBuffer_Yheight; y++) {
             for ( uint16_t x = 0 ; x < FrameBuffer_Xwidth; x++) {
                 if ( *f != *c) {      
                     *r = *c = *f; 
                     update_rec(x,y);
+                    Changed = 1;
                 }
                 f++;  c++; r++;
             }   
         }
     }
     
+    if ( ! Changed) return;
+    
     rfbMarkRectAsModified(RFB_Server, minX, minY, maxX,maxY );
-    return;
 }
 
 /*****************************************************************************/
@@ -693,7 +592,7 @@ void print_usage(char **argv)
                "-k device: keyboard device node (example: /dev/input/event0)\n"
                "-t device: touchscreen device node (example:/dev/input/event2)\n"
                "-m device: mouse device node (example:/dev/input/event2)\n"
-               "-r degrees: framebuffer rotation, default is 0\n"
+               "-r degrees: framebuffer rotation, default is 0.\n"
                "-R degrees: touchscreen rotation, default is same as framebuffer rotation\n"
                "-F FPS: Maximum target FPS. Default is 0, meaning unlimited FPS.\n"
                "-v: verbose\n"
@@ -831,8 +730,9 @@ int main(int argc, char **argv)
         rfbRunEventLoop(RFB_Server, -1, TRUE);
         while (rfbIsActive(RFB_Server) )
         {
-            if ( RFB_Server->clientHead != NULL ) update_screen32(); // && memcmp(DRM_FrameBuffer, CMP_FrameBuffer, FrameBufferSize) ) update_screen32();
-            else if (Target_fps > 0) usleep(1000 * 1000 / Target_fps);   
+            if ( RFB_Server->clientHead != NULL ) update_screen32();
+            else if (Target_fps > 0) usleep(1000 * 1000 / Target_fps);
+            usleep(10 * 1000);   
         }
     }
  
