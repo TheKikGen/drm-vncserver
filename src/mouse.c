@@ -29,7 +29,6 @@ static int mousefd = -1;
 static int xmin, xmax;
 static int ymin, ymax;
 static int rotate;
-static int trkg_id = -1;
 static bool is_wheel_hires = false;
 
 #ifndef input_event_sec
