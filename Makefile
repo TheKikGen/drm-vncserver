@@ -1,7 +1,7 @@
 # tool macros
 CC ?= gcc 
 #CXX ?= # FILL: the compiler
-CFLAGS :=-O3 -Wall `pkg-config libdrm --cflags`
+CFLAGS :=-O3 -Wextra -Wall `pkg-config libdrm --cflags`
 #CXXFLAGS := # FILL: compile flags
 DBGFLAGS := -g
 COBJFLAGS := $(CFLAGS) -c 

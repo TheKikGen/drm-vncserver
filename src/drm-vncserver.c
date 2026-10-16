@@ -140,7 +140,7 @@ static void update_screen32();
 
 const char *connector_type_name(unsigned int type)
 {
-    if (type < ARRAY_SIZE(connector_type_names) && type >= 0) {
+    if (type < ARRAY_SIZE(connector_type_names)) {
         return connector_type_names[type].name;
     }
 
