@@ -467,11 +467,9 @@ static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool 
     RFB_Server->serverFormat.depth        = FrameBuffer_Depth ;
     RFB_Server->serverFormat.bigEndian    = 0 ;
     RFB_Server->serverFormat.trueColour   = 1 ;
-    RFB_Server->serverFormat.redMax       = 0x00FF ;
-    RFB_Server->serverFormat.greenMax     = 0x00FF ;
-    RFB_Server->serverFormat.blueMax      = 0x00FF ; 
-    RFB_Server->serverFormat.blueMax      = 0x00FF ;
- 
+    RFB_Server->serverFormat.redMax       = (1 << var_scrinfo.red.length) - 1 ;
+    RFB_Server->serverFormat.greenMax     = (1 << var_scrinfo.green.length) - 1 ;
+    RFB_Server->serverFormat.blueMax      = (1 << var_scrinfo.blue.length) - 1 ;
     RFB_Server->serverFormat.redShift     = var_scrinfo.red.offset ;
     RFB_Server->serverFormat.greenShift   = var_scrinfo.green.offset ;
     RFB_Server->serverFormat.blueShift    = var_scrinfo.blue.offset ;  
