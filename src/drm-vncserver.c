@@ -638,7 +638,8 @@ int main(int argc, char **argv)
                     break;                    
                 case 'k':
                     i++;
-                    strcpy(kbd_device, argv[i]);
+                    if (argv[i])
+                        strcpy(kbd_device, argv[i]);
                     break;
                 case 'p':
                     i++;
