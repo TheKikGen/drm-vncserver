@@ -124,8 +124,8 @@ int keysym2scancode(rfbKeySym key, rfbClientPtr cl)
         case XK_parenleft:      scancode = KEY_9;       break;  //28
         case XK_parenright:     scancode = KEY_0;       break;  //29
         case XK_asterisk:       scancode = KEY_8;       break;  //2a
-        case XK_plus:           scancode = KEY_MINUS;   break;  //2b
-        case XK_comma:          scancode = KEY_EQUAL;   break;  //2c
+        case XK_plus:           scancode = KEY_EQUAL;   break;  //2b
+        case XK_comma:          scancode = KEY_COMMA;   break;  //2c
         case XK_minus:          scancode = KEY_MINUS;   break;  //2d
         case XK_period:         scancode = KEY_DOT;     break;  //2e
         case XK_slash:          scancode = KEY_SLASH;   break;  //2f
